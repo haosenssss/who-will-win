@@ -30,7 +30,9 @@ block bars (`████████░░ 52%`), horizontal rules.
 ## Single-match template
 
 ```markdown
-# {Home} vs {Away} — {competition}, {date}
+# {Home} vs {Away} — {competition}, {match date}
+
+分析日期 | Generated: {today, YYYY-MM-DD} — 数据与赔率截至该日
 
 ## 判决 | Verdict
 {One sentence: the call.} 置信 {A/B/C}。

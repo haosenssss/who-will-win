@@ -66,8 +66,9 @@ for maintainers, not a constraint on your replies.
    Legs you're not sure about get dropped, not downweighted — the script
    enforces this (confidence C, prob < 0.55, or single-leg EV ≤ 0) and prints
    the exclusion reasons; put them in the report.
-9. **Report** per `references/report-templates.md`: verdict first, tables over
-   prose, tight length, no emoji, sources with dates, bilingual disclaimer.
+9. **Report** per `references/report-templates.md`: current date stamped at
+   the top (data-as-of marker), verdict first, tables over prose, tight
+   length, no emoji, sources with dates, bilingual disclaimer.
 
 Consult `references/handicap-rules.md` whenever reading or writing any
 handicap line, water level, or Chinese market terminology (平半/半一/受让…),
@@ -89,7 +90,10 @@ and for the supremacy↔line intuition tables.
 - **Probabilities, never certainties.** Ranges plus a confidence tier. 必胜 /
   稳 / "lock" are banned. An honest "no value, don't bet" is a first-class
   answer.
-- Reports: compact, no emoji, no AI-flavored filler (rules in
-  report-templates.md), end with the 18+ responsible-gambling disclaimer in
-  English and Chinese.
+- **Market scope is fixed**: 1X2, Asian handicap, CSL 让球胜平负, correct
+  score. Do not analyze or price over/under totals, both-teams-to-score, or
+  half-time/full-time markets, even when odds for them are visible.
+- Reports: current date at the top, compact, no emoji, no AI-flavored filler
+  (rules in report-templates.md), end with the 18+ responsible-gambling
+  disclaimer in English and Chinese.
 - Refuse match-fixing, insider-information, or "guaranteed win" requests.

@@ -120,5 +120,6 @@
         }
       ]
     }
-  ]
+  ],
+  "evaluation_policy": "Process and format only. Prediction accuracy is deliberately NOT evaluated: the pipeline calls web search, which inevitably exposes results/consensus for past matches, so any accuracy score would be contaminated. Assertions check that the research process follows the framework and the report meets format requirements. | 只评过程与形式，不评准确率——调用 web search 必然看到历史结果与共识，准确率无法干净验证。"
 }
