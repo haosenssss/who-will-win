@@ -1,0 +1,124 @@
+{
+  "skill_name": "football-predictor",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "明天晚上世界杯16强巴西对挪威，帮我全面分析一下：谁能赢？让球怎么看？最可能的比分是多少？",
+      "expected_output": "全面调研报告：胜平负概率、亚盘/让球研判、top比分及概率、带来源日期、无emoji、含免责声明",
+      "files": [],
+      "assertions": [
+        {
+          "text": "报告给出胜/平/负三项明确概率且合计约100%"
+        },
+        {
+          "text": "包含亚盘或让球盘研判（具体盘口线+方向）"
+        },
+        {
+          "text": "给出至少3个最可能比分及各自概率"
+        },
+        {
+          "text": "人员/伤停信息附带来源和日期（非凭记忆）"
+        },
+        {
+          "text": "报告出现模型λ（预期进球）参数，证明走了量化管线而非拍脑袋"
+        },
+        {
+          "text": "全文无emoji"
+        },
+        {
+          "text": "结尾含18+/负责任声明"
+        },
+        {
+          "text": "无'必胜/稳'类绝对化措辞"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "prompt": "Mexico vs England in the World Cup round of 16 this weekend - give me a deep analysis. Who wins? What about the Asian handicap line, and what scoreline do you expect?",
+      "expected_output": "English full-research report with probabilities, AH read, scorelines, sources with dates, disclaimer",
+      "files": [],
+      "assertions": [
+        {
+          "text": "Report gives explicit win/draw/away probabilities summing to ~100%"
+        },
+        {
+          "text": "Asian handicap analysis names a specific line and side"
+        },
+        {
+          "text": "At least 3 likely scorelines with probabilities"
+        },
+        {
+          "text": "Personnel claims carry sources with dates"
+        },
+        {
+          "text": "Expected-goals (lambda) parameters visible, proving the quantitative pipeline ran"
+        },
+        {
+          "text": "No emoji anywhere"
+        },
+        {
+          "text": "Responsible-gambling disclaimer present"
+        },
+        {
+          "text": "Report is in English (follows user language)"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "世界杯法国对巴拉圭，竞彩让球(-1)赔率 2.10/3.30/2.95，胜平负 1.36/4.60/8.00。帮我看看怎么买最划算？",
+      "expected_output": "去水隐含概率、逐选项EV、明确推荐或诚实观望、正确使用给定赔率",
+      "files": [],
+      "assertions": [
+        {
+          "text": "正确复述用户给定的两组赔率（无数字篡改）"
+        },
+        {
+          "text": "展示去水后的隐含概率"
+        },
+        {
+          "text": "对每个可投选项给出EV（期望值）"
+        },
+        {
+          "text": "给出明确推荐（含注比）或诚实的'无价值观望'结论"
+        },
+        {
+          "text": "让球(-1)的语义正确：法国须净胜2球才算让球胜"
+        },
+        {
+          "text": "有独立的模型概率（来自调研+λ推导），不是只把赔率倒推回来"
+        },
+        {
+          "text": "全文无emoji且含负责任声明"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "这周末世界杯这三场：加拿大vs摩洛哥、巴西vs挪威、墨西哥vs英格兰，我想串关，帮我出个方案，拿不准的场次就别放进去。",
+      "expected_output": "每场简析+候选腿、剔除低置信场次并给理由、串关组合赔率=各腿乘积、注比建议",
+      "files": [],
+      "assertions": [
+        {
+          "text": "三场比赛每场都有独立分析和候选腿（选项+赔率+概率+置信）"
+        },
+        {
+          "text": "明确执行了剔除逻辑：列出被剔除的场次及理由，或论证为何全部入选"
+        },
+        {
+          "text": "串关组合赔率=各腿赔率乘积（数学可验证）"
+        },
+        {
+          "text": "串关命中概率=各腿概率乘积，并给出EV"
+        },
+        {
+          "text": "给出注比建议且提示串关高方差"
+        },
+        {
+          "text": "全文无emoji且含负责任声明"
+        }
+      ]
+    }
+  ]
+}
