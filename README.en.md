@@ -12,10 +12,12 @@ Give it a fixture — it runs a large-scale research operation on both teams
 (player-by-player availability sweep, tactical matchup, track-record
 deep-read, coach style profiling), compresses the evidence into calibrated
 expected goals, and prices every market with a closed-form Dixon-Coles
-engine: win/draw/loss, Asian handicap (five-way quarter-ball settlement),
-China Sports Lottery 让球胜平负, and exact scores. Give it an odds screenshot
-and it computes the maximum-expected-value betting plan. Give it several
-fixtures and it builds parlays — dropping any leg it isn't sure about.
+engine: win/draw/loss, double chance, Asian handicap (five-way quarter-ball
+settlement), China Sports Lottery 让球胜平负, and exact scores. Give it an odds
+screenshot and it picks the high-confidence, fairly-priced play — staying
+inside the band where it can actually be right, then taking the better price
+there. Give it several fixtures and it builds parlays — dropping any leg it
+isn't sure about.
 
 Across the whole pipeline the LLM does exactly one thing: estimate expected
 goals within bounded, sourced rules. Every calculation that touches money —
@@ -25,8 +27,8 @@ die.
 
 ## Prediction Pipeline
 
-Four stages, from raw intelligence to a betting slip. Every stage has a gate;
-every step leaves evidence.
+Four stages, from raw intelligence to high-confidence predictions and picks.
+Every stage has a gate; every step leaves evidence.
 
 ---
 
@@ -104,29 +106,31 @@ and $\lambda_A$. Reproducible, auditable, testable.*
   systematic underestimate of 0-0, 1-0 and other low scores; when truncated
   tail mass drops below $10^{-6}$ the matrix auto-expands and renormalizes, so
   lopsided blowouts never silently lose probability. Deterministic,
-  reproducible, backed by 64 tests.
+  reproducible, backed by 84 tests.
 - **Style reweighting (1X2 strictly invariant).** A `controlled` coach (shuts
   games down when ahead) and a `ruthless` one (chases goal difference to the
   final whistle) reshape the scoreline **distribution** — moving mass between
   blowout and narrow wins *within the same team's win region* — while
   home/draw/away probabilities do not move a hair. That invariance is a test
   assertion, not folklore.
-- **Full-market output in one pass.** 1X2 with fair odds, the full Asian-
-  handicap ladder (each quarter-ball line split into a five-way full-win /
-  half-win / push / half-lose / full-lose settlement distribution, both sides
-  independently), CSL 让球胜平负, and the complete exact-score matrix from 0-0
-  up plus the likeliest scorelines.
+- **Full-market output in one pass.** 1X2 with fair odds, **double chance
+  (1X/12/X2)**, the full Asian-handicap ladder (each quarter-ball line split
+  into a five-way full-win / half-win / push / half-lose / full-lose settlement
+  distribution, both sides independently), CSL 让球胜平负, and the complete
+  exact-score matrix from 0-0 up plus the likeliest scorelines with their
+  combined top-3 hit rate.
 
 ---
 
-### STAGE 03 — De-Vig & the Positive-EV Gate
+### STAGE 03 — De-Vig & the Confidence Gate
 
 <p align="center">
-  <img src="images/step3_filter.png" alt="De-Vig and EV Gate" width="80%" style="border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.4);" />
+  <img src="images/step3_filter.png" alt="De-Vig and Confidence Gate" width="80%" style="border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.4);" />
 </p>
 
 *The model gives true probabilities; the market gives odds with water in them.
-This layer wrings the water out, then compares line by line for an edge.*
+This layer wrings the water out, then filters for picks that are both safe and
+not underpriced — hit-rate first, not maximum expectation.*
 
 - **Four-format odds recognition.** Auto-detects and converts European, Hong
   Kong, Malay, and Indonesian odds to a common decimal scale. Inputs that fall
@@ -138,54 +142,59 @@ This layer wrings the water out, then compares line by line for an edge.*
   $\gamma$ that solves $\sum_i(1/d_i)^\gamma = 1$ — which shrinks longshots more
   than favourites, correcting exactly the favourite-longshot bias the public's
   love of favourites creates, to recover fairer implied probabilities.
-- **Full-market EV scan.** After blending model and de-vigged market with
-  $p_{\text{blend}} = 0.65\,p_{\text{model}} + 0.35\,p_{\text{market}}$, it
-  computes expected value $\mathbb{E} = p\cdot d - 1$ for every priced
-  selection; quarter-ball bets get EV computed over their five-way settlement
-  distribution. Highest EV wins — a correct score is a legitimate first-class
-  pick when the numbers say so.
-- **Divergence discipline + longshot guard.** A model-vs-de-vigged-market gap
-  above 10 percentage points on any outcome forces a re-examination: missed
-  team news? stale xG? a line moved by a lineup leak? A surviving divergence
-  must carry a written "why the market is wrong" thesis in the report, or the
-  estimate is pulled back to the market. For any selection priced above 4.0 the
-  EV threshold automatically doubles — a purpose-built defense against the pull
-  of long odds.
-- **"NO VALUE — pass" is first-class.** When the model and market agree and no
-  positive-EV selection exists, the primary verdict is "no +EV options, stand
-  down". Not paying tuition is a form of winning.
+- **Confidence gate → best value in band.** Blend model and de-vigged market
+  with $p_{\text{blend}} = 0.65\,p_{\text{model}} + 0.35\,p_{\text{market}}$,
+  then two steps: (1) a **confidence gate** keeps only selections whose hit
+  probability clears a floor (55% by default, tunable), shutting the door on
+  low-probability longshots; (2) **best value in band** ranks the survivors so
+  the better-priced safe pick surfaces first — not the trivial-payout 1.05
+  favourite, not the 8.0 longshot. That sweet spot is the recommendation;
+  scorelines are handled separately, the top 2-3 by probability with a combined
+  hit rate.
+- **Divergence discipline.** A model-vs-de-vigged-market gap above 10
+  percentage points on any outcome forces a re-examination: missed team news?
+  stale xG? a line moved by a lineup leak? A surviving divergence must carry a
+  written "why the market is wrong" thesis in the report, or the estimate is
+  pulled back to the market.
+- **Hit-rate first, not max-EV.** EV, Kelly, and "no +EV, stand down" are still
+  computed — but demoted to a secondary reference, no longer the headline. The
+  goal is guessing right inside a controllable-risk band, not chasing a longshot
+  for a positive-EV number. When nothing clears the floor, it says so plainly:
+  "no high-confidence pick".
 
 ---
 
-### STAGE 04 — Fractional Kelly & Parlay Portfolio
+### STAGE 04 — Confidence-First Picks & Parlays
 
 <p align="center">
-  <img src="images/step4_portfolio.png" alt="Kelly and Parlay Portfolio" width="80%" style="border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.4);" />
+  <img src="images/step4_portfolio.png" alt="Confidence-First Picks and Parlays" width="80%" style="border-radius: 8px; box-shadow: 0 4px 15px rgba(0,0,0,0.4);" />
 </p>
 
-*Finding the edge is half the job; how much to stake and how to combine is the
-other half.*
+*Choosing the safe pick is half the job; how to combine it, whether to bet, and
+how much is the other half.*
 
-- **Fractional-Kelly sizing.** Full-Kelly fraction from
-  $f^* = \dfrac{bp - q}{b}$, then scaled down by a conservative fraction
-  (1/4 Kelly by default); each bet gets a per-stake cap, simultaneous bets are
-  normalized to the budget, and the combined exposure is capped at 6% of
-  bankroll.
+- **Confidence-first picks.** The report leads not with the highest-EV longshot
+  but with three things: the 2-3 most-likely scorelines (with combined hit
+  rate), the safest 1X2 or double-chance cover, and the best-priced selection
+  inside the confidence band. Be right first, worry about value second.
+- **Fractional-Kelly sizing (secondary tool).** If you do stake, full-Kelly
+  fraction from $f^* = \dfrac{bp - q}{b}$ scaled down by a conservative fraction
+  (1/4 Kelly by default), each bet capped and combined exposure held to 6% of
+  bankroll. This is a tool for those who choose to bet, not the point of the
+  recommendation.
 - **Five-state Kelly (quarter-ball).** A quarter-ball bet has no simple
   win/lose binary, so on the return distribution of its five settlement states
   (full-win / half-win / push / half-lose / full-lose) the script runs a
   **golden-section search** — 100 interval-shrinking iterations — for the
-  Kelly fraction that maximizes log-growth
-  $\mathbb{E}[\log(1+f\cdot r)]$ — not a two-state formula bent to fit.
-- **Parlay leg eligibility gate.** Before combining, every leg clears three
-  gates: confidence-C fixtures are dropped, blended probability below 0.55 is
-  dropped, single-leg EV ≤ 0 is dropped — each exclusion listed with its
-  reason. The rule is unbending: a leg you're not sure about isn't downweighted,
-  it's thrown out.
-- **Full enumeration, N-fold to N串M.** Over the surviving legs it enumerates
-  every combination (a `4x11`, for instance, is all eleven 2-to-4-leg subsets of
-  four legs), computing total odds, hit probability, EV, and Kelly stake for
-  each to trace the optimal return curve. Market scope is locked to 1X2, Asian
+  fraction that maximizes log-growth $\mathbb{E}[\log(1+f\cdot r)]$ — not a
+  two-state formula bent to fit.
+- **Parlays: hit-rate first, unsure legs dropped.** Before combining, every leg
+  clears three gates: confidence-C fixtures are dropped, blended probability
+  below 0.55 is dropped, single-leg EV ≤ 0 is dropped — each exclusion listed
+  with its reason. It enumerates every combination N-fold to N串M (a `4x11` is
+  all eleven 2-to-4-leg subsets of four legs), recommends the higher-hit-rate
+  smaller parlays first, and lists longer, lower-hit-rate combos separately as
+  the high-odds options. Market scope is locked to 1X2, double chance, Asian
   handicap, CSL 让球, and correct score.
 
 ---
@@ -202,15 +211,18 @@ other half.*
 - **The LLM never does betting math.** It estimates expected goals from
   evidence, within bounded, documented adjustment rules. Bundled zero-
   dependency Python scripts handle everything numeric: the score matrix,
-  five-way quarter-ball settlement, vig removal (power method), EV, fractional
-  Kelly, and N串M parlay enumeration.
+  five-way quarter-ball settlement, double chance, vig removal (power method),
+  EV, fractional Kelly, and N串M parlay enumeration.
 - **Style-aware scorelines.** Teams that shut games down at 2-0 and teams
   that chase goal difference get different scoreline distributions from the
   same win probability — profiled from coach history and press consensus, with
   win/draw/loss left unchanged.
-- **Honest by construction.** Estimate-then-anchor discipline against the
-  market, mandatory re-examination on >10pp divergence, confidence tiers that
-  gate recommendations, and "NO VALUE — don't bet" as a first-class result.
+- **Hit-rate first, honest fallback.** The goal is guessing right inside a
+  controllable-risk band — clear a probability floor first, then take the
+  better-priced pick among the safe ones, rather than chasing a longshot for a
+  positive-EV number. Estimate-then-anchor discipline, mandatory re-examination
+  on >10pp divergence, confidence tiers that gate recommendations; and when
+  there is no high-confidence pick, it says so instead of forcing one.
 
 ## Install
 
@@ -272,8 +284,9 @@ Install the "who-will-win" football-prediction skill for me.
 
 The report is date-stamped at the top (data-as-of marker), leads with the
 verdict, and shows the player-sweep table, model vs market comparison, top
-scorelines, and — when odds are available — an EV-ranked betting plan with
-fractional-Kelly stakes.
+scorelines, and — when odds are available — the high-confidence picks: the
+likeliest scorelines, the safest 1X2 or double-chance cover, and the
+best-priced selection inside the confidence band.
 
 ## Run the engine directly
 
@@ -316,9 +329,10 @@ examples/  three worked examples: single match, screenshot odds, parlay
 python3 -m pytest tests/ -v
 ```
 
-64 tests cover the Poisson/Dixon-Coles math, an exhaustive quarter-ball
-settlement golden table, odds-format conversions, vig removal (proportional
-and power), Kelly, and parlay filtering.
+84 tests cover the Poisson/Dixon-Coles math, double-chance identities,
+confidence-pick selection, an exhaustive quarter-ball settlement golden table,
+odds-format conversions, vig removal (proportional and power), Kelly, and
+parlay filtering.
 
 ## Disclaimer
 

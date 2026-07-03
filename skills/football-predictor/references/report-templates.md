@@ -63,9 +63,17 @@ block bars (`████████░░ 52%`), horizontal rules.
 ## 比分 | Scorelines
 {top 3-5 with probabilities; note style adjustment if applied}
 
-## 收益最大化方案 | Optimal Play
-{value.py plan table: pick / odds / EV / stake}
-{or: "无正EV选项，观望。市场定价与模型一致。"}
+## 高把握优选 | High-Confidence Picks
+最可能比分 | Most-likely scorelines: {2-3 scores + combined hit % from
+predict.py most_likely / value.py scoreline_picks}
+最稳结果 | Safest result: {highest-probability 1X2 or double-chance cover +
+its probability — the "just guess who won't lose" pick}
+区间内最优价 | Best price in band: {value.py --objective confidence top
+safe_pick — clears the confidence floor AND carries the better odds; this is
+the sweet spot, not the trivial-payout favourite}
+{EV/Kelly as a one-line secondary reference only, clearly labelled 次要参考}
+{if nothing clears the floor: say so plainly and give the most-likely
+scorelines as the guess — do not manufacture a pick}
 
 ## 风险 | Risks
 - {variance flags, concretely}
@@ -92,8 +100,9 @@ the single-match template — verdict, key intel, model vs market), add:
 剔除：
 - {match}: {reason} — 拿不准的场次不进串
 
-推荐组合：{legs} — 总赔率 {x}，命中 {p}%，EV {+x}%
+推荐组合：{legs} — 命中 {p}%，总赔率 {x}（EV {+x}% 次要参考）
 {value.py parlay table for alternatives / N串M packages}
+{命中优先：优先推荐命中率高的小串；腿数越多命中率越低，作为高赔选项另列}
 ```
 
 ## Odds-only quick reply (user just pastes odds and asks 哪个划算)

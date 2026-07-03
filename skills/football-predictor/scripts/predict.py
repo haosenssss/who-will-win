@@ -127,6 +127,30 @@ def one_x_two(matrix):
     return {"home": home, "draw": draw, "away": 1.0 - home - draw}
 
 
+def double_chance(oxt):
+    """Double-chance covers: 1X (home or draw), 12 (home or away, no draw),
+    X2 (draw or away). The three overlap, so they do not sum to 1 — each is a
+    separate high-hit-rate cover, not a partition."""
+    return {"1X": oxt["home"] + oxt["draw"],
+            "12": oxt["home"] + oxt["away"],
+            "X2": oxt["draw"] + oxt["away"]}
+
+
+def most_likely(oxt, dc, top, n_scores=3):
+    """The hit-rate-first read: the single likeliest result and double-chance
+    cover, plus the top scorelines and their combined hit probability. This is
+    what the skill leads with when the goal is guessing right, not chasing EV."""
+    result_pick = max(("home", "draw", "away"), key=lambda k: oxt[k])
+    dc_pick = max(dc, key=lambda k: dc[k])
+    scores = top[:n_scores]
+    return {
+        "result": {"pick": result_pick, "prob": round(oxt[result_pick], 6)},
+        "double_chance": {"pick": dc_pick, "prob": round(dc[dc_pick], 6)},
+        "scorelines": [s["score"] for s in scores],
+        "scorelines_coverage": round(sum(s["prob"] for s in scores), 6),
+    }
+
+
 def _settle_single(line, margin):
     """Settle a non-quarter line: returns 'win' | 'push' | 'lose'."""
     adj = margin + line
@@ -236,6 +260,8 @@ def compute(lam, mu, rho=0.0, style_home="balanced", style_away="balanced",
     matrix = apply_style(matrix, style_away, is_home=False)
     eh, ea = expectations(matrix)
     oxt = one_x_two(matrix)
+    dc = double_chance(oxt)
+    tscores = top_scores(matrix, n_top)
     lines = ah_lines if ah_lines is not None else parse_ah_lines("-2.0..2.0:0.25")
     ah = {side: [dict(line=l, **{k: round(v, 6) for k, v in
                                  settle_ah(matrix, l, side).items()})
@@ -257,10 +283,14 @@ def compute(lam, mu, rho=0.0, style_home="balanced", style_away="balanced",
         "one_x_two": {k: round(v, 6) for k, v in oxt.items()},
         "fair_odds": {k: round(1.0 / v, 3) if v > 1e-12 else None
                       for k, v in oxt.items()},
+        "double_chance": {k: round(v, 6) for k, v in dc.items()},
+        "double_chance_fair_odds": {k: round(1.0 / v, 3) if v > 1e-12 else None
+                                    for k, v in dc.items()},
+        "most_likely": most_likely(oxt, dc, tscores),
         "asian_handicap": ah,
         "csl_handicap": csl,
         "top_scores": [{"score": s["score"], "prob": round(s["prob"], 6)}
-                       for s in top_scores(matrix, n_top)],
+                       for s in tscores],
         "score_matrix": [[round(c, 6) for c in row] for row in matrix],
     }
 
@@ -272,6 +302,9 @@ def bar(p, width=10):
 
 def to_markdown(res, home_name, away_name):
     o = res["one_x_two"]
+    dc = res["double_chance"]
+    dcf = res["double_chance_fair_odds"]
+    ml = res["most_likely"]
     exp = res["expected"]
     lines = [
         f"### {home_name} vs {away_name} — model output "
@@ -289,12 +322,23 @@ def to_markdown(res, home_name, away_name):
         f"| {away_name} win | {o['away']:.1%} | "
         f"{res['fair_odds']['away']} | {bar(o['away'])} |",
         "",
+        "**Double chance** (overlapping covers — hit-rate first)",
+        "",
+        "| Cover | Prob | Fair odds |",
+        "|---|---|---|",
+        f"| 1X ({home_name} or draw) | {dc['1X']:.1%} | {dcf['1X']} |",
+        f"| 12 ({home_name} or {away_name}) | {dc['12']:.1%} | {dcf['12']} |",
+        f"| X2 (draw or {away_name}) | {dc['X2']:.1%} | {dcf['X2']} |",
+        "",
         "**Top scorelines**",
         "",
         "| Score | Prob |",
         "|---|---|",
     ]
     lines += [f"| {t['score']} | {t['prob']:.1%} |" for t in res["top_scores"]]
+    lines += ["", f"Top {len(ml['scorelines'])} scorelines "
+                  f"({', '.join(ml['scorelines'])}) cover "
+                  f"~{ml['scorelines_coverage']:.1%} combined."]
     sup = exp["supremacy"]
     lines += ["", f"**Asian handicap ({home_name} side, lines near fair "
                   f"supremacy {sup:+.2f})**", "",

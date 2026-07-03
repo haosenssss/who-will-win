@@ -4,12 +4,13 @@ description: >
   Football (soccer) match prediction and betting-odds value analysis with deep
   web research and a Dixon-Coles probability engine. Use whenever the user asks
   who will win a football match, wants a match preview, prediction, or analysis
-  (1X2 win/draw/loss, Asian handicap, China Sports Lottery 让球, exact score),
-  shares a screenshot or text of betting odds to evaluate, or asks for a
-  betting plan or parlay across matches — even if they don't say "predict".
-  Triggers include: 足球预测, 比赛分析, 胜平负, 让球, 亚盘, 水位, 竞彩, 串关,
-  比分预测, 赔率, odds analysis, handicap, accumulator, parlay, "Arsenal vs
-  Liverpool who wins". Football only — not other sports, not financial advice.
+  (1X2 win/draw/loss, double chance, Asian handicap, China Sports Lottery 让球,
+  exact score), shares a screenshot or text of betting odds to evaluate, or
+  asks for a betting plan or parlay across matches — even if they don't say
+  "predict". Triggers include: 足球预测, 比赛分析, 胜平负, 双重机会, 双胜, 让球,
+  亚盘, 水位, 竞彩, 串关, 比分预测, 赔率, odds analysis, handicap, double chance,
+  accumulator, parlay, "Arsenal vs Liverpool who wins". Football only — not
+  other sports, not financial advice.
 compatibility: Needs web search + a Python 3.8+ runtime for bundled scripts (stdlib only).
 ---
 
@@ -51,12 +52,19 @@ for maintainers, not a constraint on your replies.
 6. **Calibrate** (framework Layer 3): model vs no-vig market; >10pp gap on any
    outcome → re-examine, and keep the divergence only with a written "why the
    market is wrong" thesis. Assign confidence tier A/B/C.
-7. **Value scan.** Build `odds.json` (schema in odds-sourcing.md), then:
+7. **Select picks (confidence-first).** Build `odds.json` (schema in
+   odds-sourcing.md), then:
    ```
    python3 scripts/value.py --predict-json out.json --odds-json odds.json --budget 100
    ```
-   The plan takes whatever has the highest EV — a correct score is a valid
-   pick when the numbers say so. "NO VALUE — 观望" is a respectable output.
+   Default objective is hit-rate-first: keep selections whose probability
+   clears a floor (the controllable-risk band, `--min-confidence`, default
+   0.55), then rank those by value so the better-priced safe pick surfaces
+   first — not the trivial-payout favourite, not the longshot. Lead with the
+   2-3 most-likely scorelines (predict.py `most_likely`), the safest result or
+   double-chance cover, and the best-priced pick inside the floor.
+   `--objective ev` restores the legacy max-EV plan; treat EV/Kelly as a
+   secondary reference, never the headline.
 8. **Parlay (multi-match).** Run steps 1–7 per match (fan research out to
    sub-agents per match), collect one candidate leg per match into
    `legs.json`, then:
@@ -88,11 +96,17 @@ and for the supremacy↔line intuition tables.
   EV, Kelly, parlays. If you catch yourself computing a quarter-ball payout
   or multiplying parlay odds in prose, stop and run the script.
 - **Probabilities, never certainties.** Ranges plus a confidence tier. 必胜 /
-  稳 / "lock" are banned. An honest "no value, don't bet" is a first-class
-  answer.
-- **Market scope is fixed**: 1X2, Asian handicap, CSL 让球胜平负, correct
-  score. Do not analyze or price over/under totals, both-teams-to-score, or
-  half-time/full-time markets, even when odds for them are visible.
+  稳 / "lock" are banned. An honest "no confident pick" is a first-class answer.
+- **Hit-rate first, not max-EV.** The objective is guessing right within a
+  controllable-risk band, then preferring the better-priced option inside it.
+  Offer 2-3 scorelines and a safe result/double-chance cover. Do not headline a
+  longshot because its EV is positive — that extreme-case tilt is the failure
+  mode this replaced. EV/Kelly and "NO VALUE — 观望" are demoted to a secondary
+  reference, not the lead.
+- **Market scope is fixed**: 1X2, double chance (1X/12/X2), Asian handicap,
+  CSL 让球胜平负, correct score. Do not analyze or price over/under totals,
+  both-teams-to-score, or half-time/full-time markets, even when odds for them
+  are visible.
 - Reports: current date at the top, compact, no emoji, no AI-flavored filler
   (rules in report-templates.md), end with the 18+ responsible-gambling
   disclaimer in English and Chinese.

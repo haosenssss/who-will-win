@@ -23,6 +23,7 @@ VALUE_VERSION = "1.0.0"
 
 LONGSHOT_ODDS = 4.0          # above this, EV threshold doubles
 DEFAULT_MIN_LEG_PROB = 0.55  # parlay legs below this are dropped
+DEFAULT_MIN_CONFIDENCE = 0.55  # confidence-mode floor: keep picks above this
 PORTFOLIO_TOTAL_CAP = 0.06   # combined stakes never exceed 6% of bankroll
 DISCLAIMER = ("18+. For reference and entertainment only — no guarantee of "
               "profit. Bet only what you can afford to lose. | "
@@ -221,6 +222,33 @@ def scan_ah(predict_data, entry, cfg):
     return rows
 
 
+def scan_double_chance(predict_data, dc_odds, cfg):
+    """Double-chance selections (1X/12/X2). The three covers overlap, so there
+    is no clean cross-selection no-vig — compare the model cover probability
+    against the raw implied for each offered price."""
+    model = predict_data.get("double_chance") or {}
+    labels = list(dc_odds.keys())
+    if not labels:
+        return []
+    decimals, _ = convert_all(list(dc_odds.values()),
+                              cfg.get("odds_format") or "decimal")
+    rows = []
+    for label, d in zip(labels, decimals):
+        p_model = model.get(label)
+        if p_model is None:
+            continue
+        q = min(1.0 / d, 0.999)
+        p = cfg["blend"] * p_model + (1.0 - cfg["blend"]) * q
+        rows.append({
+            "market": "double_chance", "selection": label,
+            "odds_decimal": round(d, 3), "model_prob": round(p_model, 4),
+            "market_prob_novig": round(q, 4), "blended_prob": round(p, 4),
+            "ev": round(ev_binary(p, d), 4),
+            "kelly": round(kelly_binary(p, d), 4),
+        })
+    return rows
+
+
 def scan_scores(predict_data, score_odds, cfg):
     model = {s["score"]: s["prob"] for s in predict_data["top_scores"]}
     matrix = predict_data.get("score_matrix")
@@ -252,6 +280,35 @@ def scan_scores(predict_data, score_odds, cfg):
             "note": None if complete else "incomplete score set — raw implied",
         })
     return rows
+
+
+def build_confidence_picks(rows, cfg):
+    """Confidence-gated value (the default objective).
+
+    The goal is guessing right, not chasing EV. Two-step:
+    1. Keep result-market selections whose blended probability clears the floor
+       (the controllable-risk zone) — this drops the low-probability longshots
+       that pure EV ranking would surface.
+    2. Rank the survivors by EV, so that among picks you are equally confident
+       in, the better-priced one comes first. Hit-rate first, price second.
+
+    Scorelines are listed separately, ranked by probability with a combined
+    coverage figure, because even the likeliest scoreline sits below the
+    result-market floor — the user still wants the top 2-3 to guess from.
+    """
+    floor = cfg.get("min_confidence", DEFAULT_MIN_CONFIDENCE)
+    result_rows = [r for r in rows if r["market"] != "correct_score"]
+    safe = [r for r in result_rows if r["blended_prob"] >= floor]
+    safe.sort(key=lambda r: (r["ev"], r["blended_prob"]), reverse=True)
+    scores = [r for r in rows if r["market"] == "correct_score"]
+    scores.sort(key=lambda r: r["model_prob"], reverse=True)
+    top = scores[:3]
+    return {
+        "floor": floor,
+        "safe_picks": safe,
+        "scoreline_picks": top,
+        "scoreline_coverage": round(sum(r["model_prob"] for r in top), 4),
+    }
 
 
 def build_plan(rows, cfg):
@@ -385,16 +442,68 @@ def run_portfolio(predict_data, odds_data, cfg):
         rows += scan_1x2_like(f"csl {h:+d}", model, decimals, cfg,
                               [f"home {h:+d}", f"draw {h:+d}",
                                f"away {h:+d}"])
+    if "double_chance" in odds_data:
+        rows += scan_double_chance(predict_data, odds_data["double_chance"], cfg)
     if "correct_score" in odds_data:
         rows += scan_scores(predict_data, odds_data["correct_score"], cfg)
     rows.sort(key=lambda r: r["ev"], reverse=True)
     plan = build_plan(rows, cfg)
-    return {"all_selections": rows, "plan": plan,
-            "verdict": ("VALUE FOUND" if plan else
-                        "NO VALUE — market pricing is fair, 建议观望")}
+    picks = build_confidence_picks(rows, cfg)
+    top = picks["safe_picks"][0] if picks["safe_picks"] else None
+    return {
+        "objective": cfg.get("objective", "confidence"),
+        "all_selections": rows,
+        "confidence_picks": picks,
+        "plan": plan,
+        "verdict": (
+            f"最高把握优选: {top['market']} {top['selection']} "
+            f"(命中概率 {top['blended_prob']:.0%}, 赔率 {top['odds_decimal']})"
+            if top else
+            "无选项达到置信下限, 仅给出最可能比分参考"),
+        "ev_verdict": ("VALUE FOUND" if plan else
+                       "NO VALUE — market pricing is fair, 建议观望"),
+    }
 
 
 # ---------- output ----------
+
+def confidence_markdown(result, budget):
+    """Hit-rate-first output: most-likely scorelines + safe result picks
+    ranked by value within the confidence floor. EV plan is demoted to a
+    secondary reference, not the headline."""
+    picks = result["confidence_picks"]
+    lines = ["### High-confidence picks (value.py v%s)" % VALUE_VERSION, "",
+             f"**{result['verdict']}**", ""]
+    if picks["scoreline_picks"]:
+        lines += [f"**Most-likely scorelines** (top {len(picks['scoreline_picks'])} "
+                  f"cover ~{picks['scoreline_coverage']:.1%}):", "",
+                  "| Score | Model prob | Odds |", "|---|---|---|"]
+        for r in picks["scoreline_picks"]:
+            lines.append(f"| {r['selection']} | {r['model_prob']:.1%} | "
+                         f"{r['odds_decimal']} |")
+        lines.append("")
+    if picks["safe_picks"]:
+        lines += [f"**Safe result picks** (model prob >= {picks['floor']:.0%}, "
+                  "better price first):", "",
+                  "| Market | Selection | Odds | Model | Blend | EV |",
+                  "|---|---|---|---|---|---|"]
+        for r in picks["safe_picks"][:8]:
+            lines.append(f"| {r['market']} | {r['selection']} | "
+                         f"{r['odds_decimal']} | {r['model_prob']:.1%} | "
+                         f"{r['blended_prob']:.1%} | {r['ev']:+.2%} |")
+        lines += ["", "Within the confidence floor, higher-odds picks rank "
+                      "first — hit-rate first, better price second."]
+    else:
+        lines += [f"No selection cleared the {picks['floor']:.0%} confidence "
+                  "floor. Use the most-likely scorelines above, or lower "
+                  "--min-confidence."]
+    lines += ["", "_EV reference (secondary — not the headline objective):_"]
+    for r in result["all_selections"][:3]:
+        lines.append(f"- {r['market']} {r['selection']} @ {r['odds_decimal']}: "
+                     f"EV {r['ev']:+.2%}, model {r['model_prob']:.1%}")
+    lines += ["", DISCLAIMER]
+    return "\n".join(lines)
+
 
 def plan_markdown(result, budget):
     lines = ["### Value scan (value.py v%s)" % VALUE_VERSION, "",
@@ -406,7 +515,7 @@ def plan_markdown(result, budget):
                      f"{r['market_prob_novig']:.1%} | "
                      f"{r['blended_prob']:.1%} | {r['ev']:+.2%} | "
                      f"{r['kelly']:.3f} |")
-    lines += ["", f"**{result['verdict']}**", ""]
+    lines += ["", f"**{result.get('ev_verdict', result['verdict'])}**", ""]
     if result["plan"]:
         lines += ["| Pick | Odds | EV | Stake %bankroll" +
                   (f" | Stake ({budget}) |" if budget else " |"),
@@ -476,6 +585,14 @@ def main(argv=None):
                     choices=("decimal", "hk", "malay", "indo"))
     ap.add_argument("--vig-method", choices=("power", "proportional", "both"),
                     default="both")
+    ap.add_argument("--objective", choices=("confidence", "ev"),
+                    default="confidence",
+                    help="confidence: hit-rate-first within a probability "
+                         "floor (default). ev: legacy max-EV value plan.")
+    ap.add_argument("--min-confidence", type=float,
+                    default=DEFAULT_MIN_CONFIDENCE,
+                    help="probability floor for confidence picks (default "
+                         "0.55)")
     ap.add_argument("--blend", type=float, default=0.65)
     ap.add_argument("--kelly-fraction", type=float, default=0.25)
     ap.add_argument("--ev-threshold", type=float, default=0.02)
@@ -493,9 +610,16 @@ def main(argv=None):
            "ev_threshold": args.ev_threshold,
            "max_stake_pct": args.max_stake_pct,
            "odds_format": args.odds_format,
+           "objective": args.objective,
+           "min_confidence": args.min_confidence,
            "min_leg_prob": args.min_leg_prob,
            "parlay_max_size": args.parlay_max_size,
            "parlay_formats": [f for f in args.parlay_formats.split(",") if f]}
+
+    def portfolio_md(res):
+        return (confidence_markdown(res, args.budget)
+                if args.objective == "confidence"
+                else plan_markdown(res, args.budget))
 
     if args.parlay:
         with open(args.parlay, encoding="utf-8") as fh:
@@ -509,7 +633,7 @@ def main(argv=None):
         with open(args.odds_json, encoding="utf-8") as fh:
             odds_data = json.load(fh)
         result = run_portfolio(predict_data, odds_data, cfg)
-        md = plan_markdown(result, args.budget)
+        md = portfolio_md(result)
     elif args.market:
         if not args.odds:
             raise SystemExit("error: single-market mode needs --odds")
@@ -536,7 +660,7 @@ def main(argv=None):
         else:
             raise SystemExit("error: need --predict-json or --model-probs")
         result = run_portfolio(predict_data, odds_data, cfg)
-        md = plan_markdown(result, args.budget)
+        md = portfolio_md(result)
     else:
         raise SystemExit("error: pick a mode — --odds-json, --parlay, "
                          "or --market")

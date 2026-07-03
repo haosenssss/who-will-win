@@ -32,6 +32,7 @@ then run the normal pipeline.
 | Signal in the image | Market |
 |---|---|
 | 3 prices, labels 胜/平/负 or 1/X/2 or H/D/A, no line | European 1X2 |
+| 2–3 prices labelled 1X/12/X2 or 双重机会/双胜, all ~1.05–1.5 | Double chance |
 | 让球 ±N + 3 prices, decimal ~1.5–5 | CSL 让球胜平负 |
 | 2 prices in 0.75–1.15 + line words 平手/平半/半球/半一/一球… | Asian handicap, HK water |
 | Grid of scorelines with prices | Correct score 比分 |
@@ -71,6 +72,7 @@ Never fabricate representative odds.
 {
   "format": "decimal",
   "one_x_two": [2.05, 3.60, 3.80],
+  "double_chance": {"1X": 1.28, "12": 1.30, "X2": 1.55},
   "asian_handicap": [
     {"line": -0.5, "home": 0.95, "away": 0.93, "format": "hk"}
   ],
@@ -82,6 +84,9 @@ Never fabricate representative odds.
 ```
 
 - Order is always home/draw/away for 3-way markets.
+- `double_chance` is an object keyed by cover (`1X`/`12`/`X2`); include only
+  the covers you have. Its covers overlap, so `value.py` compares each against
+  its raw implied rather than de-vigging them as a set.
 - Any market may be omitted; `value.py` scans whatever is present.
 - Per-entry `format` overrides the file default (common: decimal 1X2 next to
   HK-water handicaps on the same screenshot).

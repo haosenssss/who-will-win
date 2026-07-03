@@ -222,6 +222,79 @@ def test_csl_zero_equals_one_x_two():
         predict.one_x_two(matrix))
 
 
+# ---------- double chance & most likely ----------
+
+@pytest.mark.parametrize("lam,mu,rho", [
+    (1.5, 1.2, -0.1), (3.4, 0.4, 0.0), (0.6, 0.6, -0.3),
+])
+def test_double_chance_identities(lam, mu, rho):
+    matrix, _ = predict.build_matrix(lam, mu, rho)
+    oxt = predict.one_x_two(matrix)
+    dc = predict.double_chance(oxt)
+    assert dc["1X"] == pytest.approx(oxt["home"] + oxt["draw"])
+    assert dc["12"] == pytest.approx(oxt["home"] + oxt["away"])
+    assert dc["X2"] == pytest.approx(oxt["draw"] + oxt["away"])
+    for v in dc.values():
+        assert 0.0 <= v <= 1.0
+
+
+@pytest.mark.parametrize("lam,mu,rho", [
+    (1.5, 1.2, -0.1), (3.4, 0.4, 0.0), (0.6, 0.6, -0.3),
+])
+def test_double_chance_complements_the_excluded_outcome(lam, mu, rho):
+    """Each cover plus the one result it excludes must sum to 1."""
+    matrix, _ = predict.build_matrix(lam, mu, rho)
+    oxt = predict.one_x_two(matrix)
+    dc = predict.double_chance(oxt)
+    assert dc["1X"] + oxt["away"] == pytest.approx(1.0)
+    assert dc["12"] + oxt["draw"] == pytest.approx(1.0)
+    assert dc["X2"] + oxt["home"] == pytest.approx(1.0)
+
+
+def test_most_likely_result_pick_is_highest_probability_outcome():
+    oxt = {"home": 0.52, "draw": 0.26, "away": 0.22}
+    dc = predict.double_chance(oxt)
+    top = [{"score": "1-0", "prob": 0.12}, {"score": "1-1", "prob": 0.10},
+           {"score": "0-0", "prob": 0.09}, {"score": "2-1", "prob": 0.07}]
+    ml = predict.most_likely(oxt, dc, top)
+    assert ml["result"]["pick"] == "home"
+    assert ml["result"]["prob"] == pytest.approx(0.52)
+
+
+def test_most_likely_double_chance_pick_is_highest_probability_cover():
+    oxt = {"home": 0.30, "draw": 0.35, "away": 0.35}
+    dc = predict.double_chance(oxt)
+    top = [{"score": "1-1", "prob": 0.11}]
+    ml = predict.most_likely(oxt, dc, top)
+    expected_pick = max(dc, key=lambda k: dc[k])
+    assert ml["double_chance"]["pick"] == expected_pick
+    assert ml["double_chance"]["prob"] == pytest.approx(dc[expected_pick])
+
+
+def test_most_likely_scorelines_top_three_and_coverage():
+    oxt = {"home": 0.52, "draw": 0.26, "away": 0.22}
+    dc = predict.double_chance(oxt)
+    top = [{"score": "1-0", "prob": 0.12}, {"score": "1-1", "prob": 0.10},
+           {"score": "0-0", "prob": 0.09}, {"score": "2-1", "prob": 0.07}]
+    ml = predict.most_likely(oxt, dc, top)
+    assert len(ml["scorelines"]) == 3
+    assert ml["scorelines"] == ["1-0", "1-1", "0-0"]
+    assert ml["scorelines_coverage"] == pytest.approx(0.12 + 0.10 + 0.09)
+
+
+def test_most_likely_via_compute_matches_top_scores_and_one_x_two():
+    res = predict.compute(1.55, 1.03, n_top=8)
+    ml = res["most_likely"]
+    oxt = res["one_x_two"]
+    expected_result_pick = max(("home", "draw", "away"), key=lambda k: oxt[k])
+    assert ml["result"]["pick"] == expected_result_pick
+    top3 = res["top_scores"][:3]
+    assert len(ml["scorelines"]) == 3
+    assert ml["scorelines"] == [t["score"] for t in top3]
+    assert ml["scorelines_coverage"] == pytest.approx(
+        sum(t["prob"] for t in top3), abs=1e-6)
+
+
 # ---------- validation & CLI ----------
 
 def test_lambda_out_of_range_rejected():

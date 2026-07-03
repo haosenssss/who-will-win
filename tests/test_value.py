@@ -120,6 +120,99 @@ def test_blend_ah_dist_pulls_toward_market():
     assert total == pytest.approx(1.0)
 
 
+# ---------- double chance scanning ----------
+
+def test_scan_double_chance_uses_model_prob_and_computes_ev():
+    predict_data = {"double_chance": {"1X": 0.75, "12": 0.80, "X2": 0.55}}
+    dc_odds = {"1X": 1.05, "12": 1.22}
+    cfg = {"blend": 0.65, "odds_format": "decimal"}
+    rows = value.scan_double_chance(predict_data, dc_odds, cfg)
+    assert {r["selection"] for r in rows} == {"1X", "12"}
+    row = next(r for r in rows if r["selection"] == "1X")
+    assert row["market"] == "double_chance"
+    assert row["odds_decimal"] == pytest.approx(1.05)
+    assert row["model_prob"] == pytest.approx(0.75)  # taken straight from predict_data
+    q = min(1.0 / 1.05, 0.999)
+    p = 0.65 * 0.75 + 0.35 * q
+    assert row["blended_prob"] == pytest.approx(round(p, 4))
+    assert row["ev"] == pytest.approx(round(value.ev_binary(p, 1.05), 4))
+    assert row["kelly"] == pytest.approx(round(value.kelly_binary(p, 1.05), 4))
+
+
+def test_scan_double_chance_skips_labels_missing_from_model():
+    predict_data = {"double_chance": {"1X": 0.75, "12": 0.80, "X2": 0.55}}
+    # BTTS is not a double-chance label the model produces -> must be skipped
+    dc_odds = {"1X": 1.05, "BTTS": 1.90}
+    cfg = {"blend": 0.65, "odds_format": "decimal"}
+    rows = value.scan_double_chance(predict_data, dc_odds, cfg)
+    assert {r["selection"] for r in rows} == {"1X"}
+
+
+def test_scan_double_chance_empty_odds_returns_no_rows():
+    predict_data = {"double_chance": {"1X": 0.75, "12": 0.80, "X2": 0.55}}
+    cfg = {"blend": 0.65, "odds_format": "decimal"}
+    assert value.scan_double_chance(predict_data, {}, cfg) == []
+
+
+# ---------- confidence-gated picks ----------
+
+def test_build_confidence_picks_filters_below_floor_and_sorts_by_ev():
+    rows = [
+        {"market": "1x2", "selection": "home", "blended_prob": 0.60,
+         "ev": 0.05, "model_prob": 0.55},
+        {"market": "double_chance", "selection": "1X", "blended_prob": 0.80,
+         "ev": 0.02, "model_prob": 0.78},
+        {"market": "asian_handicap", "selection": "home -0.5",
+         "blended_prob": 0.50, "ev": 0.15, "model_prob": 0.48},
+        {"market": "correct_score", "selection": "1-0", "blended_prob": 0.10,
+         "ev": 0.30, "model_prob": 0.12},
+        {"market": "correct_score", "selection": "1-1", "blended_prob": 0.09,
+         "ev": 0.10, "model_prob": 0.10},
+        {"market": "correct_score", "selection": "2-1", "blended_prob": 0.07,
+         "ev": 0.05, "model_prob": 0.08},
+        {"market": "correct_score", "selection": "0-0", "blended_prob": 0.06,
+         "ev": 0.01, "model_prob": 0.07},
+    ]
+    picks = value.build_confidence_picks(rows, {"min_confidence": 0.55})
+    assert picks["floor"] == 0.55
+    safe_selections = [(r["market"], r["selection"]) for r in picks["safe_picks"]]
+    # below-floor asian_handicap pick (0.50 < 0.55) is excluded despite high EV
+    assert ("asian_handicap", "home -0.5") not in safe_selections
+    # correct_score rows never enter safe_picks, regardless of probability
+    assert all(r["market"] != "correct_score" for r in picks["safe_picks"])
+    # higher-EV survivor (1x2 @ .05) ranks before lower-EV survivor (dc @ .02)
+    assert safe_selections == [("1x2", "home"), ("double_chance", "1X")]
+    assert [r["ev"] for r in picks["safe_picks"]] == sorted(
+        [r["ev"] for r in picks["safe_picks"]], reverse=True)
+
+
+def test_build_confidence_picks_scoreline_picks_top_three_by_model_prob():
+    rows = [
+        {"market": "correct_score", "selection": "1-0", "blended_prob": 0.10,
+         "ev": 0.30, "model_prob": 0.12},
+        {"market": "correct_score", "selection": "1-1", "blended_prob": 0.09,
+         "ev": 0.10, "model_prob": 0.10},
+        {"market": "correct_score", "selection": "2-1", "blended_prob": 0.07,
+         "ev": 0.05, "model_prob": 0.08},
+        {"market": "correct_score", "selection": "0-0", "blended_prob": 0.06,
+         "ev": 0.01, "model_prob": 0.07},
+    ]
+    picks = value.build_confidence_picks(rows, {"min_confidence": 0.55})
+    assert len(picks["scoreline_picks"]) == 3
+    assert [r["selection"] for r in picks["scoreline_picks"]] == \
+        ["1-0", "1-1", "2-1"]
+    assert picks["scoreline_coverage"] == pytest.approx(
+        0.12 + 0.10 + 0.08, abs=1e-4)
+
+
+def test_build_confidence_picks_uses_default_floor_when_not_configured():
+    rows = [{"market": "1x2", "selection": "away", "blended_prob": 0.50,
+             "ev": 0.01, "model_prob": 0.50}]
+    picks = value.build_confidence_picks(rows, {})
+    assert picks["floor"] == value.DEFAULT_MIN_CONFIDENCE
+    assert picks["safe_picks"] == []  # 0.50 < default 0.55
+
+
 # ---------- portfolio mode ----------
 
 def _predict_data():
@@ -134,7 +227,7 @@ def test_portfolio_finds_value_when_market_misprices():
     result = value.run_portfolio(_predict_data(), odds, cfg)
     assert result["plan"], "expected home win flagged as value"
     assert result["plan"][0]["selection"] == "home"
-    assert result["verdict"] == "VALUE FOUND"
+    assert result["ev_verdict"] == "VALUE FOUND"
 
 
 def test_portfolio_honest_null_when_market_fair():
@@ -148,7 +241,7 @@ def test_portfolio_honest_null_when_market_fair():
                max_stake_pct=2.0, odds_format=None)
     result = value.run_portfolio(data, odds, cfg)
     assert not result["plan"]
-    assert "NO VALUE" in result["verdict"]
+    assert "NO VALUE" in result["ev_verdict"]
 
 
 def test_portfolio_scans_ah_and_csl_and_scores():
@@ -167,6 +260,44 @@ def test_portfolio_scans_ah_and_csl_and_scores():
     # rows are EV-sorted
     evs = [r["ev"] for r in result["all_selections"]]
     assert evs == sorted(evs, reverse=True)
+
+
+def _confidence_odds():
+    """Short-priced double-chance covers guarantee a safe pick clears the
+    default 0.55 confidence floor, unlike the underdog-heavy 1x2 prices used
+    elsewhere in this file."""
+    return {"one_x_two": [1.60, 4.50, 6.00],
+            "double_chance": {"1X": 1.30, "12": 1.35},
+            "correct_score": {"1-0": 7.5, "2-1": 9.0, "1-1": 6.5}}
+
+
+def test_run_portfolio_default_objective_is_confidence():
+    cfg = dict(blend=0.65, kelly_fraction=0.25, ev_threshold=0.02,
+               max_stake_pct=2.0, odds_format=None)  # no "objective" key
+    result = value.run_portfolio(_predict_data(), _confidence_odds(), cfg)
+    assert result["objective"] == "confidence"
+    assert "confidence_picks" in result
+    assert "ev_verdict" in result
+    assert "plan" in result
+
+
+def test_run_portfolio_verdict_leads_with_safest_pick_when_available():
+    cfg = dict(blend=0.65, kelly_fraction=0.25, ev_threshold=0.02,
+               max_stake_pct=2.0, odds_format=None, min_confidence=0.55)
+    result = value.run_portfolio(_predict_data(), _confidence_odds(), cfg)
+    assert result["confidence_picks"]["safe_picks"], \
+        "expected at least one pick above the confidence floor"
+    assert result["verdict"].startswith("最高把握优选")
+    top = result["confidence_picks"]["safe_picks"][0]
+    assert top["selection"] in result["verdict"]
+
+
+def test_run_portfolio_verdict_falls_back_when_nothing_clears_floor():
+    cfg = dict(blend=0.65, kelly_fraction=0.25, ev_threshold=0.02,
+               max_stake_pct=2.0, odds_format=None, min_confidence=0.99)
+    result = value.run_portfolio(_predict_data(), _confidence_odds(), cfg)
+    assert result["confidence_picks"]["safe_picks"] == []
+    assert result["verdict"] == "无选项达到置信下限, 仅给出最可能比分参考"
 
 
 def test_longshot_threshold_doubles():
@@ -188,6 +319,16 @@ def test_stake_caps_apply():
              "blended_prob": 0.70, "ev": 0.40, "kelly": 0.40}]
     plan = value.build_plan(rows, cfg)
     assert plan[0]["stake_pct"] == 2.0  # capped, not 10%
+
+
+def test_confidence_markdown_has_no_emoji_and_expected_sections():
+    cfg = dict(blend=0.65, kelly_fraction=0.25, ev_threshold=0.02,
+               max_stake_pct=2.0, odds_format=None, min_confidence=0.55)
+    result = value.run_portfolio(_predict_data(), _confidence_odds(), cfg)
+    md = value.confidence_markdown(result, None)
+    assert not any(0x1F300 <= ord(c) <= 0x1FAFF for c in md)
+    assert "Most-likely scorelines" in md
+    assert "Safe result picks" in md
 
 
 # ---------- parlay mode ----------

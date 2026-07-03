@@ -129,6 +129,14 @@ Rationale: LLM-derived probabilities are miscalibrated in predictable ways,
 and the blend suppresses fake edges while keeping genuine, evidence-backed
 divergences alive. Don't override `--blend` upward without a written reason.
 
+The blend feeds selection, but the default objective is **confidence-first**,
+not max-EV: `value.py` keeps only selections whose blended probability clears
+a floor (the controllable-risk band, `--min-confidence`, default 0.55), then
+prefers the better-priced one inside that band — the sweet spot, not the
+trivial-payout favourite and not the longshot. Lead with 2-3 most-likely
+scorelines and a safe result/double-chance cover; EV and Kelly are a secondary
+reference. `--objective ev` restores the legacy max-EV plan.
+
 ## Step 8 — Scoreline style adjustment
 
 λ sets how strong; style sets the shape of winning scorelines. From the
